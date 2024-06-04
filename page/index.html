@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>文件断点续传实现</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        /* 进度条样式 */
+        #progressContainer {
+            width: 100%;
+            background-color: #ccc;
+            margin: 20px 0;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+
+        #progressBar {
+            width: 0;
+            height: 30px;
+            background-color: #4caf50;
+            text-align: center;
+            line-height: 30px;
+            color: #fff;
+            text-align: center;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 文本输入控件 -->
+    <input type="file" id="file" />
+
+    <!-- 上传按钮 -->
+    <button onclick="uploadFile()">Upload</button>
+
+    <!-- 暂停按钮 -->
+    <button onclick="togglePause()">Pause</button>
+
+    <!-- 进度条容器 -->
+    <div id="progressContainer">
+        <div id="progressBar">0%</div>
+    </div>
+
+</body>
+<script>
+    const CHUNK_SIZE = 0.01 * 1024 * 1024;//定义每个切片的大小
+    let isPaused = false; // 上传是否暂停
+    let uploadedBytes = 0; // 已上传的字节数
+
+    async function uploadFile() {
+        const fileInput = document.getElementById('file');//读取上传文件控件
+        const file = fileInput.files[0];//获取用户选择的文件;
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);//计算总的切片数
+
+        // 获取已经上传的切片索引
+        const uploadedChunks = await getUploadedChunks(file.name);
+        console.log("Already uploaded chunks: ", uploadedChunks);
+
+        uploadedBytes = uploadedChunks.length * CHUNK_SIZE; // 已上传的字节数
+        updateProgress(uploadedBytes, file.size); // 初始化进度条
+
+        // 遍历每个切片并上传
+        for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+            if (uploadedChunks.includes(chunkIndex)) {
+                continue; // 跳过已经上传的切片
+            }
+
+            // 判断是否暂停上传
+            if (isPaused) {
+                await new Promise(resolve => {
+                    const checkResume = setInterval(() => {
+                        if (!isPaused) {
+                            clearInterval(checkResume);
+                            resolve();
+                        }
+                    }, 100); // 每100ms检查一次是否恢复
+                });
+            }
+
+            const start = chunkIndex * CHUNK_SIZE; // 当前切片的起始位置
+            const end = Math.min(file.size, start + CHUNK_SIZE); // 当前切片的结束位置
+            const chunk = file.slice(start, end); // 获取当前切片
+
+            // 使用 FormData 创建上传数据
+            const formData = new FormData();
+            formData.append('file', chunk); // 当前切片
+            formData.append('chunkIndex', chunkIndex); // 当前切片的索引
+            formData.append('totalChunks', totalChunks); // 总的切片数
+            formData.append('fileName', file.name); // 文件名
+
+            // 发送 POST 请求上传切片
+            await axios.post('http://localhost:3000/upload', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            });
+
+            // 更新已上传的字节数和进度条
+            uploadedBytes += chunk.size;
+            updateProgress(uploadedBytes, file.size);
+        }
+
+        // 所有切片上传完成后，发送合并请求
+        await axios.post('http://localhost:3000/merge', {
+            fileName: file.name,
+            totalChunks: totalChunks
+        });
+
+
+        alert('Upload complete!'); // 上传完成提示
+    }
+
+    // 获取已经上传的切片索引
+    async function getUploadedChunks(fileName) {
+        const response = await axios.get(`http://localhost:3000/uploadedChunks?fileName=${fileName}`);
+        return response.data;
+    }
+
+    // 更新进度条
+    function updateProgress(uploadedBytes, totalBytes) {
+        const percentage = Math.min((uploadedBytes / totalBytes) * 100, 100).toFixed(2); // 计算百分比
+        const progressBar = document.getElementById('progressBar'); // 获取进度条元素
+        progressBar.style.width = `${percentage}%`; // 设置进度条宽度
+        progressBar.textContent = `${percentage}%`; // 设置进度条文本
+    }
+
+    // 切换暂停和继续状态
+    function togglePause() {
+        isPaused = !isPaused;
+        const pauseButton = document.querySelector('button[onclick="togglePause()"]');
+        pauseButton.textContent = isPaused ? 'Resume' : 'Pause';
+    }
+</script>
+
+</html>
