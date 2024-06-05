@@ -9,8 +9,8 @@ const upload = multer({ dest: 'uploads/' });
 app.use(cors()); // 允许跨域请求
 
 // 定义上传目录路径
-const UPLOAD_DIR = path.resolve(__dirname, 'uploads');
-const MERGED_DIR = path.resolve(__dirname, 'merged');
+const UPLOAD_DIR = path.resolve(__dirname, 'uploads');//切片文件目录
+const MERGED_DIR = path.resolve(__dirname, 'merged');//切片合并后的文件目录
 
 app.use(express.json()); // 解析 JSON 请求体
 
